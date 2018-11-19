@@ -12,7 +12,9 @@
         "psr-4": {"GuzeeleTools\\": "http/src"}
     },
     "require": {
-        "php": ">=7.1.0"
+        "php": ">=7.1.0",
+        "guzzlehttp/guzzle": "^6.3",
+        "predis/predis": "^1.1"
     },
 
     "minimum-stability": "dev",
