@@ -15,7 +15,7 @@
         "php": ">=7.1.0"
     },
 
-    "minimum-stability": "master",
+    "minimum-stability": "dev",
     "license": "MIT",
     "prefer-stable": true
 }
