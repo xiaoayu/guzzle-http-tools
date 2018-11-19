@@ -1,6 +1,6 @@
 <?php
 
-namespace GuzzleHttpTools;
+namespace GuzeeleTools;
 
 
 use App\library\redis;
