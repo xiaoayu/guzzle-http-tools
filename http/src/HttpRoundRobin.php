@@ -1,6 +1,6 @@
 <?php
 
-namespace GuzeeleTools;
+namespace GuzzleTools;
 
 
 /**

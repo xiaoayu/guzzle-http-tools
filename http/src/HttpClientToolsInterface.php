@@ -1,13 +1,7 @@
 <?php
 
-namespace GuzeeleTools;
+namespace GuzzleTools;
 
-use GuzzleHttp\Cookie\CookieJar;
-use GuzzleHttp\Promise;
-use GuzzleHttp\Psr7;
-use Psr\Http\Message\UriInterface;
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
 
 
 interface HttpClientToolsInterface
