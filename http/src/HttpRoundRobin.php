@@ -38,6 +38,7 @@ class HttpRoundRobin
      */
     public function __construct(array $serverIpList)
     {
+
         if (empty($serverIpList)) {
             throw new \Exception('EXCEPTION_NOT_SERVER_IP_LIST');
         }
@@ -66,12 +67,14 @@ class HttpRoundRobin
 
         $nextKey = ($currentKey == $total - 1 ? 0 : $currentKey + 1);
 
+        $endKey = ($currentKey == $total - 1 ? 0 : $currentKey + 1);
+
         foreach ($this->_serverIpList as $key => &$server) {
             $server['current'] = false;
             if ($key == $currentKey) {
                 $server['current'] = true;
             }
         }
-        return ['currentIp' => $this->_serverIpList[$currentKey]['server'], 'nextIp' => $this->_serverIpList[$nextKey]['server'], 'serviceList' => $this->_serverIpList];
+        return ['currentIp' => $this->_serverIpList[$currentKey]['server'], 'nextIp' => $this->_serverIpList[$nextKey]['server'],'lastIp' => $this->_serverIpList[$endKey]['server'],  'serviceList' => $this->_serverIpList];
     }
 }

@@ -9,7 +9,8 @@
 namespace GuzzleTools;
 
 
-class TestDataTools{
+class TestDataTools
+{
     //规则配置必须数组的顺序来配置否则无法保证nginx优先级，否则影响匹配顺序,
     //按数组顺序匹配，支持以下几种类型，如果最后没有匹配成功，http 404异常（数组中的项可以缺少，如果存在default,最后会落到default）
     /*
@@ -19,7 +20,7 @@ class TestDataTools{
      * 3：正则按照编程顺序匹配
      * */
     private $_locationRule = [
-        'http://api.qyds.com' => [
+        'http://api.qyd.com' => [
             //全等匹配
             'equal' => [
                 '/newapi/user/account/info' => 'web_account',
@@ -50,23 +51,23 @@ class TestDataTools{
              */
             'web_account' => [
                 ['server' => '127.0.0.1'],
-                ['server' => '127.0.0.1'],
-                ['server' => '127.0.0.1'],
+                ['server' => '127.0.0.2'],
+                ['server' => '127.0.0.3'],
             ],
             'web_bank' => [
                 ['server' => '127.0.0.1:9001', 'weight' => 4, 'effective_weight' => 4, 'current_weight' => 0],
-                ['server' => '127.0.0.1:9002', 'weight' => 3, 'effective_weight' => 3, 'current_weight' => 0],
-                ['server' => '127.0.0.1:9003', 'weight' => 1, 'effective_weight' => 1, 'current_weight' => 0],
+                ['server' => '127.0.0.2:9002', 'weight' => 3, 'effective_weight' => 3, 'current_weight' => 0],
+                ['server' => '127.0.0.3:9003', 'weight' => 1, 'effective_weight' => 1, 'current_weight' => 0],
             ],
             'web' => [
                 ['server' => '127.0.0.1', 'weight' => 4, 'effective_weight' => 4, 'current_weight' => 0],
-                ['server' => '127.0.0.1', 'weight' => 3, 'effective_weight' => 3, 'current_weight' => 0],
-                ['server' => '127.0.0.1', 'weight' => 1, 'effective_weight' => 1, 'current_weight' => 0],
+                ['server' => '127.0.0.2', 'weight' => 3, 'effective_weight' => 3, 'current_weight' => 0],
+                ['server' => '127.0.0.3', 'weight' => 1, 'effective_weight' => 1, 'current_weight' => 0],
             ],
             'web_new_api' => [
                 ['server' => '127.0.0.1:9001', 'weight' => 4, 'effective_weight' => 4, 'current_weight' => 0],
-                ['server' => '127.0.0.1:9002', 'weight' => 3, 'effective_weight' => 3, 'current_weight' => 0],
-                ['server' => '127.0.0.1:9003', 'weight' => 1, 'effective_weight' => 1, 'current_weight' => 0],
+                ['server' => '127.0.0.2:9002', 'weight' => 3, 'effective_weight' => 3, 'current_weight' => 0],
+                ['server' => '127.0.0.3:9003', 'weight' => 1, 'effective_weight' => 1, 'current_weight' => 0],
             ],
         ]
     ];
@@ -77,15 +78,16 @@ class TestDataTools{
         $preds->del('http://www.qyd.com');
         foreach ($this->_locationRule as $key => $value) {
             foreach ($this->_locationRule[$key] as $k => $v) {
-                echo 'KEY=>' . $key . '|' . $k . PHP_EOL;
+//                echo 'KEY=>' . $key . '|' . $k . PHP_EOL;
                 $preds->hset($key, $k, json_encode($v));
             }
         }
     }
 
-    public function getData(){
+    public function getData()
+    {
         $preds = new PredisClient();
-        $data = $preds->hgetall('http://api.qyds.com');
+        $data = $preds->hgetall('http://api.qyd.com');
         var_dump($data);
     }
 }

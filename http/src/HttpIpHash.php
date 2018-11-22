@@ -10,7 +10,6 @@ namespace GuzzleTools;
  */
 class HttpIpHash
 {
-    const EXCEPTION_NOT_SERVER_IP_LIST = '服务器容器ip列表不能为空';
 
     /* @var $_serverIpList array 服务端port节点列表 */
     private $_serverIpList = [];
@@ -35,7 +34,7 @@ class HttpIpHash
     public function __construct(array $serverIpList)
     {
         if (empty($serverIpList)) {
-            throw new \Exception('EXCEPTION_NOT_SERVER_IP_LIST');
+            throw new \Exception('服务器容器ip列表不能为空');
         }
         $this->_serverIpList = $serverIpList;
     }
@@ -47,8 +46,6 @@ class HttpIpHash
     public function getServiceNode()
     {
         $clientIp = $this->get_client_ip();
-        // IP HASH 或 直接ip转10进制
-        //$ipHashValue = abs(s$this->_hashCode64(($clientIp)));
         $ipHashValue = ip2long($clientIp);
 
         $total = count($this->_serverIpList);
@@ -56,31 +53,10 @@ class HttpIpHash
         $currentKey = $ipHashValue % $total;
         //如果已经是最大key 则取数组第一个元素
         $nextIp = (($currentKey == $total - 1) ? $this->_serverIpList[0]['server'] : $this->_serverIpList[$currentKey + 1]['server']);
-        return ['currentIp' => $currentIp, 'nextIp' => $nextIp];
 
-    }
+        $lastIp = (($nextIp == $total - 1) ? $this->_serverIpList[0]['server'] : $this->_serverIpList[$nextIp + 1]['server']);
+        return ['currentIp' => $currentIp, 'nextIp' => $nextIp, 'lastIp' => $lastIp];
 
-    /**
-     * 获取ip hash值
-     * @param $str
-     * @return mixed
-     */
-    private function _hashCode64($str)
-    {
-        $str = (string)$str;
-        $hash = 0;
-        $len = strlen($str);
-        if ($len == 0)
-            return $hash;
-
-        for ($i = 0; $i < $len; $i++) {
-            $h = $hash << 5;
-            $h -= $hash;
-            $h += ord($str[$i]);
-            $hash = $h;
-            $hash &= 0xFFFFFFFF;
-        }
-        return $hash;
     }
 
 

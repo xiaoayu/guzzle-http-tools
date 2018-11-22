@@ -3,15 +3,13 @@
 namespace GuzzleTools;
 
 
+use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\TransferStats;
+use GuzzleTools\HttpWeightRoundRobin;
 
-class HttpClientTools implements HttpClientToolsInterface
+class HttpClientTools extends Client implements HttpClientToolsInterface
 {
-    //1:配置信息从redis读取
-    //2:轮训规则自己处理自己的 文件+lock，upname每个单独存放
-    //广播修改配置信息 todo
-    //3:根据http status code 重试
-
     /*
     * @var $_redis 连接
     */
@@ -26,7 +24,7 @@ class HttpClientTools implements HttpClientToolsInterface
     * @var balance_type 负载均衡算法，默认轮训 支持 IpHash RoundRobin:轮训（包括加权轮训，如果有权重值系统会自动判断是否加权轮训）
     * @var time_out     http超时时间
     * @var is_reply   是否开启重试机制，默认关闭[开启组件后有效]
-    * @curl_error_code 错误码为 5，6，7【添加连接失败或请求超时 404 502 504】开启重试机制 5 无法解析代理 无法解析代理。无法解析给定代理主机。6无法解析主机地址 无法解析主机。无法解析给定的远程主机。7 无法连接到主机。 对应http状态码 404[开启组件后有效]
+    * @curl_error_code 错误码为 5，6，7(28设置的time_out超时)【添加连接失败或请求超时 404 502 504】开启重试机制 5 无法解析代理 无法解析代理。无法解析给定代理主机。6无法解析主机地址 无法解析主机。无法解析给定的远程主机。7 无法连接到主机。 对应http状态码 404[开启组件后有效]
     * @verify https证书验证
     */
     private $_config = [
@@ -34,7 +32,9 @@ class HttpClientTools implements HttpClientToolsInterface
         'balance_type' => 'RoundRobin',
         'time_out' => 3,
         'is_reply' => false,
+        'reply_times' => 2,
         'curl_error_code' => [5, 6, 7],
+        'http_code' => [404, 502, 504],
         'verify' => false
     ];
 
@@ -59,29 +59,39 @@ class HttpClientTools implements HttpClientToolsInterface
      */
     public function httpRequire($url, $options, $method)
     {
-        //是否抛404异常
+        //是否抛异常
         $replyException = true;
+        //是否抛异常
+        $reReplyException = true;
         //如果开启路由寻址功能
         if ($this->_config['is_open_balance_tools'] === true) {
 
             $serverInfo = $this->routeToServer($url);
+
             $url = $serverInfo['requestUrl'];
-            $nextUrl = $serverInfo['requestUrl'];
-            $replyException = false;
+            $nextUrl = $serverInfo['nextUrl'];
+            $lastUrl = $serverInfo['lastUrl'];
+
+            if ($this->_config['is_reply'] === true && $this->_config['reply_times'] >= 2 && $url != $nextUrl) {
+                $replyException = false;
+            }
+            if ($this->_config['is_reply'] === true && $this->_config['reply_times'] > 2 && $lastUrl != $nextUrl) {
+                $reReplyException = false;
+            }
         }
         try {
             $response = $this->sendHttpRequest($url, $options, $method, $replyException);
-            //如果是直接请求并且开启了重试机制并且当前请求的地址和下次请求的地址不同，则再重试一次
-            if ($response === false && $this->_config['is_reply'] === true && $url != $nextUrl) {
-                $response = $this->sendHttpRequest($url, $options, $method, true);
+            //如果开启了重试机制，并且重试次数大于2，并且当前请求的地址和下次请求的地址不同
+            if ($response === false) {
+                $response = $this->sendHttpRequest($nextUrl, $options, $method, $reReplyException);
             }
-            var_dump($response);
+            if ($response === false) {
+                $response = $this->sendHttpRequest($lastUrl, $options, $method, true);
+            }
             return $response;
         } catch (\Exception $e) {
-
             throw new \Exception($e);
         }
-
     }
 
     /**
@@ -96,6 +106,7 @@ class HttpClientTools implements HttpClientToolsInterface
     private function sendHttpRequest($url, $options, $method, $replyException = true)
     {
 
+        $httpCode = 0;
         try {
             $client = new Client(['timeout' => $this->_config['time_out'], 'verify' => $this->_config['verify']]);
             $curlErrorCode = 0;
@@ -106,17 +117,19 @@ class HttpClientTools implements HttpClientToolsInterface
                     },
                     'force_ip_resolve' => 'v4'
                 ], $options));
-        } catch (ConnectException $e){
-            echo 1;var_dump($e);exit;
+
         } catch (\Exception $e) {
-           var_dump($e->getCode());
+
+            $httpCode = $e->getCode();
             $exception = $e;
         }
+        $curlErrorCode = $httpCode > 0 ? $httpCode : $curlErrorCode;
+
         if ($curlErrorCode == 0) {
             return $response;
         }
-        var_dump($curlErrorCode);
-        if ($replyException == false && in_array($curlErrorCode, $this->_config['curl_error_code'])) {
+
+        if ($replyException == false && in_array($curlErrorCode, array_merge($this->_config['curl_error_code'], $this->_config['http_code']))) {
             return false;
         }
         throw new \Exception($exception);
@@ -136,89 +149,88 @@ class HttpClientTools implements HttpClientToolsInterface
         $host = $urlInfo['scheme'] . '://' . $urlInfo['host'] . (isset($urlInfo['port']) ? ':' . $urlInfo['port'] : '');
         $path = (isset($urlInfo['path']) ? $urlInfo['path'] : '/');
 
-
-        $locationRuleServer = $this->_getServerRedisData($host);
+        $locationRuleClass = new ServerData();
+        $locationRuleServer = $locationRuleClass->getRouteRule($host);
 
         //根据路由获取对应的的后端upstream name
         $upstreamName = false;
-        foreach ($locationRuleServer as $key => $serverRule) {
-            $serverRule = json_decode($serverRule, true);
+        //全等匹配
+        if (isset($locationRuleServer['equal'])) {
 
-            //全等匹配
-            if ($key == 'equal') {
-                foreach ($serverRule as $key => $value) {
-                    if ($key == $path) {
-                        $upstreamName = $value;
-                        break 2;
-                    }
+            //必须循环，需要拿到数组的key和value
+            foreach ($locationRuleServer['equal'] as $key => $value) {
+                if ($key == $path) {
+                    $upstreamName = $value;
+                    break;
                 }
-            }
-            // 路由前缀匹配
-            if ($key == 'prefix_equal') {
-                foreach ($serverRule as $key => $value) {
-                    if ($key == substr($path, 0, strlen($key))) {
-                        $upstreamName = $value;
-                        break 2;
-                    }
-                }
-            }
-            //区分大小写的匹配
-            if ($key == 'distinguish_regex') {
-                foreach ($serverRule as $key => $value) {
-                    if (preg_match("/" . $key . "/", $path)) {
-                        $upstreamName = $value;
-                        break 2;
-                    }
-                }
-            }
-            //不区分大小写的匹配
-            if ($key == 'undistinguish_regex') {
-                foreach ($serverRule as $key => $value) {
-                    if (preg_match("/" . strtolower($key) . "/", strtolower($path))) {
-                        $upstreamName = $value;
-                        break 2;
-                    }
-                }
-            }
-
-            //默认路由
-            if ($key == 'default') {
-                $upstreamName = $serverRule['/'];
-                break;
             }
         }
+        //路由前缀匹配
+        if ($upstreamName === false && isset($locationRuleServer['prefix_equal'])) {
+
+            foreach ($locationRuleServer['prefix_equal'] as $key => $value) {
+                if ($key == substr($path, 0, strlen($key))) {
+                    $upstreamName = $value;
+                    break;
+                }
+            }
+        }
+        //区分大小写的匹配
+        if ($upstreamName === false && isset($locationRuleServer['distinguish_regex'])) {
+
+            foreach ($locationRuleServer['distinguish_regex'] as $key => $value) {
+
+                if (preg_match("/" . $key . "/", $path)) {
+                    $upstreamName = $value;
+                    break;
+                }
+            }
+        }
+        //不区分大小写的匹配
+        if ($upstreamName === false && isset($locationRuleServer['undistinguish_regex'])) {
+
+            foreach ($locationRuleServer['undistinguish_regex'] as $key => $value) {
+                if (preg_match("/" . strtolower($key) . "/", strtolower($path))) {
+                    $upstreamName = $value;
+                    break;
+                }
+            }
+        }
+        //默认路由匹配
+        if ($upstreamName === false && isset($locationRuleServer['default'])) {
+            $upstreamName = $locationRuleServer['default']['/'];
+        }
+
 
         if ($upstreamName == false) {
-            throw new \Exception('502 bad gateway!');
+            throw new \Exception('502 bad gateway');
         }
 
-        if (!isset($locationRuleServer[$upstreamName])) {
-            throw new \Exception('404 server not found!');
-        }
+        $serverInfo = $this->_getService($host, $upstreamName);
 
-        $serviceList = $locationRuleServer[$upstreamName];
-
-        $serverInfo = $this->_getService(json_decode($serviceList, true), $host, $upstreamName);
-
-        return ['requestUrl' => $serverInfo['currentIp'] . $path, 'nextUrl' => $serverInfo['nextIp'] . $path];
+        return ['requestUrl' => $serverInfo['currentIp'] . $path, 'nextUrl' => $serverInfo['nextIp'] . $path, 'lastUrl' => $serverInfo['lastIp'] . $path];
     }
 
     /**
      *
      * 获取请求节点和下一次请求节点（如果http请求状态码是超时或者网络不通重试一次）
-     * @param $serverList array
+     * @param $host
+     * @param $upstreamName
      * @return array ['currentIp' => $currentIp, 'nextIp' => $nextIp]
      * @throws \Exception
      */
-    private function _getService($serverList, $host, $upstreamName)
+    private function _getService($host, $upstreamName)
     {
 
         try {
+            $locationRuleClass = new ServerData();
+            $serverTmpInfo = $locationRuleClass->getServer($host, $upstreamName);
+            $serverList = $serverTmpInfo['serverList'];
+
             if (in_array($this->_config['balance_type'], ['RoundRobin', 'IpHash'])) {
                 //轮训算法
                 if ($this->_config['balance_type'] == 'RoundRobin') {
                     //如果节点中含有权重值则调用加权轮训算法，否则调用轮训算法
-
                     if (isset($serverList[0]['weight'])) {
                         $httpServer = new HttpWeightRoundRobin($serverList);
                     } else {
@@ -227,9 +239,9 @@ class HttpClientTools implements HttpClientToolsInterface
 
                     $serverInfo = $httpServer->getServerNode();
 
-                    $this->_redis->hset($host, $upstreamName, json_encode($serverInfo['serviceList']));
+                    $locationRuleClass->resetServer($serverInfo['serviceList'], $serverTmpInfo['fileHandle']);
 
-                    return ['currentIp' => $serverInfo['currentIp'], 'nextIp' => $serverInfo['nextIp']];
+                    return ['currentIp' => $serverInfo['currentIp'], 'nextIp' => $serverInfo['nextIp'], 'lastIp' => $serverInfo['nextIp']];
                 } //IP hash 算法
                 elseif ($this->_config['balance_type'] == 'IpHash') {
                     $httpIpHashServer = new HttpIpHash($serverList);
@@ -239,128 +251,9 @@ class HttpClientTools implements HttpClientToolsInterface
                 throw new \Exception('504 bad gateway!');
             }
         } catch (\Exception $e) {
-            throw new \Exception('504 bad gateway!');
+            throw new \Exception($e);
         }
 
     }
-
-    /**
-     * 添加服务节点
-     * @param $server string 服务器
-     * @param $upstreamName string 服务器upstreamName
-     * @param $node  string 服务器节点
-     * @param int $weight
-     * @return int
-     */
-    public function addServerNode($server, $upstreamName, $node, $weight = 0)
-    {
-        $this->_redis = redis::getInstance()->getDrive();
-        $nodeList = $this->_redis->hget($server, $upstreamName);
-        if (empty($nodeList)) {
-            $newNodeList = ($weight > 0 ? [['server' => $node, 'weight' => $weight, 'effective_weight' => $weight, 'current_weight' => 0]] : [['server' => $node]]);
-
-        } else {
-            $newNodeList = [];
-            $nodeList = json_decode($nodeList, true);
-            foreach ($nodeList as $nodeInfo) {
-                $nodeInfoTmp = [];
-                $nodeInfoTmp['server'] = $nodeInfo['server'];
-                if (isset($nodeInfoTmp['weight'])) {
-                    $nodeInfoTmp['weight'] = $nodeInfo['weight'];
-                    $nodeInfoTmp['effective_weight'] = $nodeInfo['weight'];
-                    $nodeInfoTmp['current_weight'] = 0;
-                }
-                $newNodeList[] = $nodeInfoTmp;
-                $addNodeInfo = ($weight > 0 ? ['server' => $node, 'weight' => $weight, 'effective_weight' => $weight, 'current_weight' => 0] : ['server' => $node]);
-                $newNodeList = array_merge($newNodeList, $addNodeInfo);
-            }
-        }
-        return $this->_redis->hset($server, $upstreamName, json_encode($newNodeList));
-    }
-
-
-    /**
-     * 删除服务节点
-     * @param $server string 服务器
-     * @param $upstreamName string 服务器upstreamName
-     * @param $node  string 服务器节点
-     * @return int
-     * @throws \Exception
-     */
-    public function delServerNode($server, $upstreamName, $node)
-    {
-        $this->_redis = redis::getInstance()->getDrive();
-        $nodeList = $this->_redis->hget($server, $upstreamName);
-        if (empty($nodeList)) {
-            throw new \Exception('服务节点不存在', 200);
-
-        } else {
-            $newNodeList = [];
-            $nodeList = json_decode($nodeList, true);
-            foreach ($nodeList as $nodeInfo) {
-                $nodeInfoTmp = [];
-                if ($node == $nodeInfo['server']) continue;
-
-                $nodeInfoTmp['server'] = $nodeInfo['server'];
-                if (isset($nodeInfoTmp['weight'])) {
-                    $nodeInfoTmp['weight'] = $nodeInfo['weight'];
-                    $nodeInfoTmp['effective_weight'] = $nodeInfo['weight'];
-                    $nodeInfoTmp['current_weight'] = 0;
-                }
-                $newNodeList[] = $nodeInfoTmp;
-
-            }
-        }
-        return $this->_redis->hset($server, $upstreamName, json_encode($newNodeList));
-    }
-
-    /**
-     * 添加服务器匹配规则
-     * @param $server string 服务器
-     * @param $type string  equal|prefix_equal|distinguish_regex|undistinguish_regex|default
-     * @param $rule  string 规则
-     * @return int
-     * @throws \Exception
-     */
-    public function addServerRule($server, $type, $rule)
-    {
-        //todo
-    }
-
-    /**
-     * 删除服务器匹配规则
-     * @param $server string 服务器
-     * @param $type string  equal|prefix_equal|distinguish_regex|undistinguish_regex|default
-     * @param $rule  string 规则
-     * @return int
-     * @throws \Exception
-     */
-    public function delServerRule($server, $type, $rule)
-    {
-        //todo
-    }
-
-    /**
-     * 获取redis服务器信息
-     * @param $host string 当前请求host
-     * @return mixed
-     * @throws \Exception
-     */
-    private function _getServerRedisData($host)
-    {
-        try {
-            $this->_redis = redis::getInstance()->getDrive();
-
-        } catch (\Exception $e) {
-            throw new \Exception('该组件必须redis支持');
-        }
-
-        $serverData = $this->_redis->hgetall($host);
-        if (empty($serverData)) {
-            throw new \Exception('404 server not found!');
-        }
-        return $serverData;
-    }
-
 
 }

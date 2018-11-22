@@ -62,7 +62,7 @@ class HttpWeightRoundRobin
         $count = 0;
         foreach ($this->_serverIpList as $k => $server) {
             $total += $server['effective_weight'];
-            $count +=1;
+            $count += 1;
         }
 
         if ($total == 1) {
@@ -88,8 +88,13 @@ class HttpWeightRoundRobin
 
             //获取下个节点key
             $nexKey = ($currentKey == $count - 1) ? 0 : $currentKey + 1;
+
+            //获取下下个节点key
+
+            $lastKey = ($nexKey == $count - 1) ? 0 : $nexKey + 1;
+
         }
 
-        return ['currentIp' => $this->_serverIpList[$currentKey]['server'], 'nextIp' => $this->_serverIpList[$nexKey]['server'], 'serviceList' => $this->_serverIpList];
+        return ['currentIp' => $this->_serverIpList[$currentKey]['server'], 'nextIp' => $this->_serverIpList[$nexKey]['server'], 'lastIp' => $this->_serverIpList[$lastKey]['server'], 'serviceList' => $this->_serverIpList];
     }
 }
