@@ -8,12 +8,8 @@ use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\TransferStats;
 use GuzzleTools\HttpWeightRoundRobin;
 
-class HttpClientTools extends Client implements HttpClientToolsInterface
+class HttpClientTools extends Client
 {
-    /*
-    * @var $_redis 连接
-    */
-    private $_redis = null;
     /*
      * @var $_config 配置项
     */
@@ -46,22 +42,27 @@ class HttpClientTools extends Client implements HttpClientToolsInterface
     public function __construct(array $config = array())
     {
         $this->_config = array_merge($this->_config, $config);
+
+        $parentConfig = ['timeout' => $this->_config['time_out'], 'verify' => $this->_config['verify']];
+        parent::__construct($parentConfig);
+
+
     }
 
 
     /**
      * 构建http 请求
-     * @param $url string 请求地址
+     * @param $url array 请求地址
      * @param $options array 参数
      * @param $method string 请求方式
      * @return bool|mixed|\Psr\Http\Message\ResponseInterface
      * @throws \Exception
      */
-    public function httpRequire($url, $options, $method)
+    public function request($method, $url, array $options = [])
     {
-        //是否抛异常
+        //首次请求是否抛异常
         $replyException = true;
-        //是否抛异常
+        //第二次请求是否抛异常
         $reReplyException = true;
         //如果开启路由寻址功能
         if ($this->_config['is_open_balance_tools'] === true) {
@@ -80,6 +81,8 @@ class HttpClientTools extends Client implements HttpClientToolsInterface
             }
         }
         try {
+
+
             $response = $this->sendHttpRequest($url, $options, $method, $replyException);
             //如果开启了重试机制，并且重试次数大于2，并且当前请求的地址和下次请求的地址不同
             if ($response === false) {
@@ -108,9 +111,9 @@ class HttpClientTools extends Client implements HttpClientToolsInterface
 
         $httpCode = 0;
         try {
-            $client = new Client(['timeout' => $this->_config['time_out'], 'verify' => $this->_config['verify']]);
+
             $curlErrorCode = 0;
-            $response = $client->request($method, $url, $options = array_merge(
+            $response = parent::request($method, $url, $options = array_merge(
                 [
                     'on_stats' => function (TransferStats $stats) use ($url, &$curlErrorCode) {
                         $curlErrorCode = $stats->getHandlerErrorData();
@@ -239,7 +242,7 @@ class HttpClientTools extends Client implements HttpClientToolsInterface
 
                     $serverInfo = $httpServer->getServerNode();
 
-                    $locationRuleClass->resetServer($serverInfo['serviceList'], $serverTmpInfo['fileHandle']);
+                    $locationRuleClass->resetServer($serverInfo['serviceList'], $serverTmpInfo['fileHandle'], $serverTmpInfo['isFileLock']);
 
                     return ['currentIp' => $serverInfo['currentIp'], 'nextIp' => $serverInfo['nextIp'], 'lastIp' => $serverInfo['nextIp']];
                 } //IP hash 算法

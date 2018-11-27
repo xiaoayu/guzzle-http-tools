@@ -17,18 +17,15 @@ class PredisClient extends \Predis\Client
             if (isset($_instance[$name])) {
                 return $_instance[$name];
             }
-            $masterName = 'mymaster';
-            if (strpos($this->_coon, '|') !== false) {
-                [$masterName, $this->_coon] = explode('|', $this->_coon);
-            }
 
-            $sentinels = explode(',', $this->_coon);
+            $sentinels = explode(',', $_ENV['REDIS_DEFAULT_SENTINEL_LIST']);
 
-            $options = ['replication' => 'sentinel', 'service' => $masterName];
+            $options = ['replication' => 'sentinel', 'service' => $_ENV['REDIS_DEFAULT_SENTINEL_MASTERNAME']];
+
             $client = new \Predis\Client($sentinels, $options);
             return $client;
         } catch (\Exception $e) {
-            throw new \Exception('No sentinel server available for autodiscovery.' );
+            throw new \Exception('No sentinel server available for autodiscovery.');
         }
     }
 }

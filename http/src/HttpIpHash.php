@@ -51,10 +51,11 @@ class HttpIpHash
         $total = count($this->_serverIpList);
         $currentIp = $this->_serverIpList[$ipHashValue % $total]['server'];
         $currentKey = $ipHashValue % $total;
+        $nextKey = (($currentKey == $total - 1)?0:$currentKey+1);
+        $lastKey = (($nextKey == $total - 1)?0:$nextKey+1);
         //如果已经是最大key 则取数组第一个元素
-        $nextIp = (($currentKey == $total - 1) ? $this->_serverIpList[0]['server'] : $this->_serverIpList[$currentKey + 1]['server']);
-
-        $lastIp = (($nextIp == $total - 1) ? $this->_serverIpList[0]['server'] : $this->_serverIpList[$nextIp + 1]['server']);
+        $nextIp =  $this->_serverIpList[$nextKey]['server'];
+        $lastIp =  $this->_serverIpList[$lastKey]['server'];
         return ['currentIp' => $currentIp, 'nextIp' => $nextIp, 'lastIp' => $lastIp];
 
     }

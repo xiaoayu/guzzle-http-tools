@@ -19,12 +19,12 @@ class ServerData
      */
     public function getRouteRule($host)
     {
-
         try {
             $ruleContent = file_exists(self::CACHE_PATH . md5($host) . '.php');
             if ($ruleContent == false) {
+
                 $prdsClient = new PredisClient();
-                $data = $prdsClient->hgetall($host);
+                $data = $prdsClient->getRedis()->hgetall($host);
                 if (!empty($data)) {
                     $serviceList = [];
                     if (isset($data['equal'])) {
@@ -71,49 +71,93 @@ class ServerData
      */
     public function getServer($host, $upstreamName)
     {
-
         try {
             $fileName = self::CACHE_PATH . md5($host) . '_' . $upstreamName . '.php';
             $upstreamContent = file_exists($fileName);
+            //是否操作文件
+            $lockFile = true;
+            $startTime = microtime(true);
+
             if ($upstreamContent == false) {
                 $prdsClient = new PredisClient();
-                $data = $prdsClient->hget($host, $upstreamName);
+                $data = $prdsClient->getRedis()->hget($host, $upstreamName);
                 if (!empty($data)) {
-
                     $myfile = fopen($fileName, "w");
-                    flock($myfile, LOCK_SH);
-                    fwrite($myfile, $data);
-                    return ['serverList' => json_decode($data, true), 'fileHandle' => $myfile];
+                    do {
+                        //文件写锁
+                        $canWrite = flock($myfile, LOCK_EX | LOCK_NB);
+                        if ($canWrite) {
+                            $lockFile = false;
+                        }
+                    } while ((!$canWrite) && ((microtime(true) - $startTime) < 1));
+                    if ($canWrite) {
+                        fwrite($myfile, $data);
+                    }
 
+                    return ['serverList' => json_decode($data, true), 'fileHandle' => $myfile, 'isFileLock' => $lockFile];
                 } else {
                     throw new \Exception('504 gateway time-out');
                 }
             } else {
                 $fileSize = filesize($fileName);
                 $myfile = fopen($fileName, "a+");
-                flock($myfile, LOCK_SH);
-                $content = json_decode(fread($myfile, $fileSize), true);
-                return ['serverList' => (array)$content, 'fileHandle' => $myfile];
+
+                do {
+                    //文件写锁
+                    $canWrite = flock($myfile, LOCK_EX | LOCK_NB);
+                    if (!$canWrite) {
+                        $lockFile = false;
+                    }
+
+                } while ((!$canWrite) && ((microtime(true) - $startTime) < 1));
+                if ($canWrite) {
+
+                    $content = json_decode(fread($myfile, $fileSize), true);
+                } else {
+
+                    $prdsClient = new PredisClient();
+                    $data = $prdsClient->getRedis()->hget($host, $upstreamName);
+                    if (empty($data)) {
+                        throw new \Exception('504 gateway time-out');
+                    }
+                    $content = json_decode($data, true);
+                }
+                return ['serverList' => (array)$content, 'fileHandle' => $myfile, 'isFileLock' => $lockFile];
             }
         } catch (\Exception $e) {
-
             throw new \Exception($e);
         }
     }
-
 
     /**
      * 重置节点
      * @param $serverList
      * @param $fileHandle
+     * @param $isFileLock
      */
-    public function resetServer($serverList, $fileHandle)
+    public function resetServer($serverList, $fileHandle, $isFileLock)
     {
-        rewind($fileHandle);
-        ftruncate($fileHandle, 0);
-        fwrite($fileHandle, json_encode($serverList));
-        fflush($fileHandle);            // flush output before releasing the lock
-        flock($fileHandle, LOCK_UN);    // 释放锁定
+        if ($isFileLock == true) {
+            rewind($fileHandle);
+            ftruncate($fileHandle, 0);
+            fwrite($fileHandle, json_encode($serverList));
+            fflush($fileHandle);            // flush output before releasing the lock
+            flock($fileHandle, LOCK_UN);    // 释放锁定
+        }
         fclose($fileHandle);
+    }
+
+
+    /**
+     * 修改节点下的地址
+     * @param $host string 域名
+     * @param $upstreamName string upstreamName
+     * @param $data
+     * @return int
+     */
+    public function setServer($host, $upstreamName, $data)
+    {
+        $prdsClient = new PredisClient();
+        return $prdsClient->getRedis()->hset($host, $upstreamName, json_encode($data));
     }
 }

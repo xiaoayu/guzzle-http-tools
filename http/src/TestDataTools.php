@@ -75,20 +75,21 @@ class TestDataTools
     public function testInsertData()
     {
         $preds = new PredisClient();
-        $preds->del('http://www.qyd.com');
+        $preds->getRedis()->del('http://www.qyd.com');
         foreach ($this->_locationRule as $key => $value) {
             foreach ($this->_locationRule[$key] as $k => $v) {
 //                echo 'KEY=>' . $key . '|' . $k . PHP_EOL;
                 $preds->hset($key, $k, json_encode($v));
             }
         }
+        return true;
     }
 
     public function getData()
     {
         $preds = new PredisClient();
-        $data = $preds->hgetall('http://api.qyd.com');
-        var_dump($data);
+        $data = $preds->getRedis()->hgetall('http://api.qyd.com');
+        return $data;
     }
 }
 
