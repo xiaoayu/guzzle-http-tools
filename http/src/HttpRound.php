@@ -1,14 +1,20 @@
 <?php
+/**
+ * Created by PhpStorm.
+ * User: workspace
+ * Date: 2018/12/3
+ * Time: 10:02
+ */
 
 namespace GuzzleTools;
 
 
 /**
  *  http Weight Round Round Class
- *  轮训算法
+ *  随机算法
  *  根据服务器信息获取当前ip和下一个节点ip和再一次轮训的服务器信息
  */
-class HttpRoundRobin
+class HttpRound
 {
     const EXCEPTION_NOT_SERVER_IP_LIST = '服务器容器ip列表不能为空';
 
@@ -46,35 +52,19 @@ class HttpRoundRobin
     }
 
     /**
-     * 正常轮询处理
+     * 正常随机处理
      * @return array
      */
+
     public function getServerNode()
     {
 
-        $total = 0;
-        $lastKey = -1;
-        foreach ($this->_serverIpList as $k => $server) {
-            if(isset($server['current']) &&  $server['current'] === true){
-                $lastKey = $k;
-            }
-            $total += 1;
-        }
+        $total = count($this->_serverIpList);
 
-        $lastKey = ($lastKey == -1 ? $total - 1 : $lastKey);
+        $currentKey = rand(0, $total - 1);
+        $nextKey = ($currentKey + 1 == $total ? 0 : $currentKey + 1);
+        $lastKey = ($nextKey + 1 == $total ? 0 : $nextKey + 1);
 
-        $currentKey = ($lastKey == $total - 1 ? 0 : $lastKey + 1);
-
-        $nextKey = ($currentKey == $total - 1 ? 0 : $currentKey + 1);
-
-        $endKey = ($currentKey == $total - 1 ? 0 : $currentKey + 1);
-
-        foreach ($this->_serverIpList as $key => &$server) {
-            $server['current'] = false;
-            if ($key == $currentKey) {
-                $server['current'] = true;
-            }
-        }
-        return ['currentIp' => $this->_serverIpList[$currentKey]['server'], 'nextIp' => $this->_serverIpList[$nextKey]['server'],'lastIp' => $this->_serverIpList[$endKey]['server'],  'serviceList' => $this->_serverIpList];
+        return ['currentIp' => $this->_serverIpList[$currentKey]['server'], 'nextIp' => $this->_serverIpList[$nextKey]['server'], 'lastIp' => $this->_serverIpList[$lastKey]['server']];
     }
 }
