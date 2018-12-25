@@ -121,6 +121,86 @@ class HttpClientTools extends Client
         }
     }
 
+
+    /**
+     * 构建http 请求
+     * @param $url string 请求地址
+     * @param $options array 参数
+     * @param $method string 请求方式
+     * @param  $replyException boolean 是否抛404异常
+     * @return bool|mixed|\Psr\Http\Message\ResponseInterface
+     * @throws \Exception
+     */
+    private function sendHttpRequest1($url, $options, $method, $replyException = true)
+    {
+        $httpCode = 0;
+        $log = [
+            'serviceStart' => (new \DateTime())->format('Y-m-d H:i:s.u')
+        ];
+        $options = array_merge(
+            [
+                'on_stats' => function (TransferStats $stats) use (&$log, $url, &$curlErrorCode) {
+                    $log['elapsed'] = (int)bcmul($stats->getHandlerStat('total_time'), 1000);
+                    $log['namelookupTime'] = $stats->getHandlerStat('namelookup_time');
+                    //$log['connectTime'] = $stats->getHandlerStat('connect_time');
+                    $log['apiRequestUri'] = $url;
+                    $curlErrorCode = $stats->getHandlerErrorData();
+                },
+                'force_ip_resolve' => 'v4'
+            ]
+            , $options);
+        try {
+            $response = parent::request($method, $url, $options);
+        } catch (\Exception $e) {
+            $result = $e->getMessage();
+            $httpCode = $e->getCode();
+            $exception = $e;
+        }
+
+        if (isset($options['headers']['Authorization'])) {
+            unset($options['headers']['Authorization']);
+        }
+        $log['arguments'] = $options;
+        $log['status'] = isset($httpCode)?$httpCode:$response->getStatusCode();
+        $log['apiRequestMethod'] = $method;
+        $log['serviceEnd'] = (new \DateTime())->format('Y-m-d H:i:s.u');
+        $log['result'] = isset($result)?$result:$response->getBody()->getContents();
+
+        $recordLog = true;
+        if(isset($exception)){
+            if((get_class($exception) != 'Exception')){
+                error($log);
+                $recordLog = false;
+            }
+        }else{
+            info($log);
+        }
+
+        $curlErrorCode = $httpCode > 0 ? $httpCode : $curlErrorCode;
+
+        if ($curlErrorCode == 0) {
+            $response->getBody()->rewind();
+            return $response;
+        }
+
+        if ($this->_config['is_reply'] !== true) {
+            $arrErrorCode = array_merge($this->_forceReply['curl_error_code'], $this->_forceReply['http_code']);
+        } else {
+            $arrErrorCode = array_merge($this->_config['curl_error_code'], $this->_config['http_code']);
+        }
+        if ($replyException == false && in_array($curlErrorCode, $arrErrorCode)) {
+            if($recordLog){
+                info($log);
+            }
+            return false;
+        }
+        if(isset($exception)){
+            throw  $exception;
+        }
+        throw new \Exception('负载均衡组件异常', 99999);
+    }
+
+
     /**
      * 构建http 请求
      * @param $url string 请求地址
