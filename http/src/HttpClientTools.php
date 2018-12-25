@@ -131,7 +131,7 @@ class HttpClientTools extends Client
      * @return bool|mixed|\Psr\Http\Message\ResponseInterface
      * @throws \Exception
      */
-    private function sendHttpRequest1($url, $options, $method, $replyException = true)
+    private function sendHttpRequest($url, $options, $method, $replyException = true)
     {
         $httpCode = 0;
         $log = [
@@ -161,18 +161,18 @@ class HttpClientTools extends Client
             unset($options['headers']['Authorization']);
         }
         $log['arguments'] = $options;
-        $log['status'] = isset($httpCode)?$httpCode:$response->getStatusCode();
+        $log['status'] = isset($httpCode) ? $httpCode : $response->getStatusCode();
         $log['apiRequestMethod'] = $method;
         $log['serviceEnd'] = (new \DateTime())->format('Y-m-d H:i:s.u');
-        $log['result'] = isset($result)?$result:$response->getBody()->getContents();
+        $log['result'] = isset($result) ? $result : $response->getBody()->getContents();
 
         $recordLog = true;
-        if(isset($exception)){
-            if((get_class($exception) != 'Exception')){
+        if (isset($exception)) {
+            if ((get_class($exception) != 'Exception')) {
                 error($log);
                 $recordLog = false;
             }
-        }else{
+        } else {
             info($log);
         }
 
@@ -189,93 +189,19 @@ class HttpClientTools extends Client
             $arrErrorCode = array_merge($this->_config['curl_error_code'], $this->_config['http_code']);
         }
         if ($replyException == false && in_array($curlErrorCode, $arrErrorCode)) {
-            if($recordLog){
+            if ($recordLog) {
                 info($log);
             }
             return false;
         }
-        if(isset($exception)){
+        if (isset($exception)) {
             throw  $exception;
         }
         throw new \Exception('负载均衡组件异常', 99999);
     }
 
 
-    /**
-     * 构建http 请求
-     * @param $url string 请求地址
-     * @param $options array 参数
-     * @param $method string 请求方式
-     * @param  $replyException boolean 是否抛404异常
-     * @return bool|mixed|\Psr\Http\Message\ResponseInterface
-     * @throws \Exception
-     */
-    private function sendHttpRequest($url, $options, $method, $replyException = true)
-    {
-        $httpCode = 0;
-        $log = [
-            'serviceStart' => (new \DateTime())->format('Y-m-d H:i:s.u')
-        ];
-        $options = array_merge(
-            [
-                'on_stats' => function (TransferStats $stats) use (&$log, $url, &$curlErrorCode) {
-                    $log['elapsed'] = (int)bcmul($stats->getHandlerStat('total_time'), 1000);
-                    $log['namelookupTime'] = $stats->getHandlerStat('namelookup_time');
-                    $log['connectTime'] = $stats->getHandlerStat('connect_time');
-                    $log['requestUri'] = $url;
-                    $curlErrorCode = $stats->getHandlerErrorData();
-                },
-                'force_ip_resolve' => 'v4'
-            ]
-            , $options);
-        try {
-            $response = parent::request($method, $url, $options);
-            if (isset($options['headers'])) {
-                $headers = $options['headers'];
-                if (isset($headers['Authorization'])) {
-                    unset($headers['Authorization']);
-                }
-                $log['arguments']['headers'] = $headers;
-            }
 
-            if (isset($options['json'])) {
-                $log['arguments']['json'] = $options['json'];
-            }
-
-            $log['status'] = $response->getStatusCode();
-            $log['requestMethod'] = $method;
-            $log['serviceEnd'] = (new \DateTime())->format('Y-m-d H:i:s.u');
-            $log['result'] = $response->getBody()->getContents();
-            $response->getBody()->rewind();
-            info($log);
-
-        } catch (\Exception $e) {
-
-            $httpCode = $e->getCode();
-            $exception = $e;
-        }
-
-        if (isset($options['query'])) {
-            $log['arguments']['query'] = $options['query'];
-        }
-
-        $curlErrorCode = $httpCode > 0 ? $httpCode : $curlErrorCode;
-
-        if ($curlErrorCode == 0) {
-            return $response;
-        }
-
-        if ($this->_config['is_reply'] !== true) {
-            $arrErrorCode = array_merge($this->_forceReply['curl_error_code'], $this->_forceReply['http_code']);
-        } else {
-            $arrErrorCode = array_merge($this->_config['curl_error_code'], $this->_config['http_code']);
-        }
-        if ($replyException == false && in_array($curlErrorCode, $arrErrorCode)) {
-            return false;
-        }
-        throw new \Exception($exception);
-
-    }
 
     /**
      *
@@ -348,7 +274,7 @@ class HttpClientTools extends Client
             throw new \Exception('502 bad gateway');
         }
 
-        if(!isset($serverData['serverList'][$upstreamName])){
+        if (!isset($serverData['serverList'][$upstreamName])) {
             throw new \Exception('502 bad gateway');
         }
         $serverList = $serverData['serverList'][$upstreamName];
