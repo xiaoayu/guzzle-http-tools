@@ -2,7 +2,6 @@
 
 namespace GuzzleTools;
 
-
 use GuzzleHttp\Client;
 use GuzzleHttp\TransferStats;
 
@@ -117,7 +116,7 @@ class HttpClientTools extends Client
             }
             return $response;
         } catch (\Exception $e) {
-            throw new \Exception($e);
+            throw $e;
         }
     }
 
@@ -154,31 +153,21 @@ class HttpClientTools extends Client
         } catch (\Exception $e) {
             $result = $e->getMessage();
             $httpCode = $e->getCode();
-            $exception = $e;
         }
 
         if (isset($options['headers']['Authorization'])) {
             unset($options['headers']['Authorization']);
         }
         $log['arguments'] = $options;
-        $log['status'] = isset($httpCode) ? $httpCode : $response->getStatusCode();
+        $log['status'] = isset($httpCode)?$httpCode:$response->getStatusCode();
         $log['apiRequestMethod'] = $method;
         $log['serviceEnd'] = (new \DateTime())->format('Y-m-d H:i:s.u');
-        $log['result'] = isset($result) ? $result : $response->getBody()->getContents();
-
-        $recordLog = true;
-        if (isset($exception)) {
-            if ((get_class($exception) != 'Exception')) {
-                error($log);
-                $recordLog = false;
-            }
-        } else {
-            info($log);
-        }
+        $log['result'] = isset($result)?$result:$response->getBody()->getContents();
 
         $curlErrorCode = $httpCode > 0 ? $httpCode : $curlErrorCode;
 
         if ($curlErrorCode == 0) {
+            info($log);
             $response->getBody()->rewind();
             return $response;
         }
@@ -189,15 +178,15 @@ class HttpClientTools extends Client
             $arrErrorCode = array_merge($this->_config['curl_error_code'], $this->_config['http_code']);
         }
         if ($replyException == false && in_array($curlErrorCode, $arrErrorCode)) {
-            if ($recordLog) {
-                info($log);
-            }
             return false;
         }
-        if (isset($exception)) {
-            throw  $exception;
+        error($log);
+        if(isset($e)){
+            throw $e;
+        }else{
+            throw new \Exception('', 99999);
         }
-        throw new \Exception('负载均衡组件异常', 99999);
+
     }
 
 
@@ -274,7 +263,7 @@ class HttpClientTools extends Client
             throw new \Exception('502 bad gateway');
         }
 
-        if (!isset($serverData['serverList'][$upstreamName])) {
+        if(!isset($serverData['serverList'][$upstreamName])){
             throw new \Exception('502 bad gateway');
         }
         $serverList = $serverData['serverList'][$upstreamName];
